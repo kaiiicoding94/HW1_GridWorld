@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GridWorld — 策略評估與價值迭代</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* ─── Reset & Base ──────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+      color: #e0e0e0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 30px 20px;
+    }
+
+    /* ─── Header ────────────────────────────────────────────── */
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, #00d2ff, #7b2ff7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+    .subtitle { font-size: 0.9rem; color: #999; margin-bottom: 28px; }
+
+    /* ─── Controls ──────────────────────────────────────────── */
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+    .controls label {
+      font-weight: 500;
+      font-size: 0.95rem;
+    }
+    .controls select {
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid #555;
+      background: #1e1e2f;
+      color: #fff;
+      font-size: 0.95rem;
+      cursor: pointer;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .controls select:hover { border-color: #7b2ff7; }
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform .15s, box-shadow .2s;
+      color: #fff;
+    }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+    .btn:active { transform: translateY(0); }
+    .btn-primary   { background: linear-gradient(135deg, #667eea, #764ba2); }
+    .btn-secondary { background: linear-gradient(135deg, #f093fb, #f5576c); }
+    .btn-success   { background: linear-gradient(135deg, #43e97b, #38f9d7); color: #111; }
+    .btn-warning   { background: linear-gradient(135deg, #fa709a, #fee140); color: #111; }
+    .btn-reset     { background: linear-gradient(135deg, #606c88, #3f4c6b); }
+
+    /* ─── Status bar ────────────────────────────────────────── */
+    .status-bar {
+      display: flex;
+      gap: 18px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+      font-size: 0.85rem;
+    }
+    .status-bar .tag {
+      padding: 5px 14px;
+      border-radius: 20px;
+      background: rgba(255,255,255,.08);
+      backdrop-filter: blur(6px);
+    }
+    .tag-start  { border: 1px solid #4caf50; color: #81c784; }
+    .tag-end    { border: 1px solid #f44336; color: #ef9a9a; }
+    .tag-obs    { border: 1px solid #9e9e9e; color: #bdbdbd; }
+
+    /* ─── Grid ──────────────────────────────────────────────── */
+    .grid-container {
+      display: inline-block;
+      padding: 18px;
+      border-radius: 16px;
+      background: rgba(255,255,255,.06);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0,0,0,.45);
+      margin-bottom: 28px;
+    }
+    table { border-collapse: collapse; }
+    td {
+      width: 80px; height: 80px;
+      text-align: center; vertical-align: middle;
+      border: 1px solid rgba(255,255,255,.12);
+      cursor: pointer;
+      position: relative;
+      transition: background .25s, transform .15s;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      user-select: none;
+    }
+    td:hover { transform: scale(1.06); z-index: 2; box-shadow: 0 0 12px rgba(123,47,247,.5); }
+
+    /* Cell colours */
+    .cell-start { background: linear-gradient(135deg, #43a047, #66bb6a) !important; }
+    .cell-end   { background: linear-gradient(135deg, #e53935, #ef5350) !important; }
+    .cell-obs   { background: linear-gradient(135deg, #616161, #9e9e9e) !important; cursor: not-allowed; }
+
+    /* Arrow display */
+    .arrow {
+      font-size: 1.6rem;
+      line-height: 1;
+      color: #fff;
+      text-shadow: 0 0 6px rgba(255,255,255,.5);
+    }
+    /* Value display */
+    .value {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #fff;
+      margin-top: 2px;
+    }
+
+    /* ─── Info section ──────────────────────────────────────── */
+    .info {
+      max-width: 520px;
+      text-align: center;
+      font-size: 0.82rem;
+      color: #888;
+      line-height: 1.6;
+    }
+    .info code {
+      background: rgba(255,255,255,.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.78rem;
+    }
+
+    /* ─── Instruction tooltip ───────────────────────────────── */
+    .instruction {
+      margin-bottom: 18px;
+      padding: 12px 22px;
+      background: rgba(123,47,247,.15);
+      border: 1px solid rgba(123,47,247,.3);
+      border-radius: 12px;
+      font-size: 0.88rem;
+      color: #ccc;
+      text-align: center;
+      min-height: 42px;
+      transition: all .3s;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>GridWorld</h1>
+  <p class="subtitle">策略評估 ＆ 價值迭代 視覺化</p>
+
+  <!-- Controls -->
+  <div class="controls">
+    <label for="gridSize">網格大小 n：</label>
+    <select id="gridSize">
+      <option value="5">5 × 5</option>
+      <option value="6">6 × 6</option>
+      <option value="7" selected>7 × 7</option>
+      <option value="8">8 × 8</option>
+      <option value="9">9 × 9</option>
+    </select>
+    <button class="btn btn-primary"   id="btnRandomPolicy">🎲 隨機策略</button>
+    <button class="btn btn-secondary" id="btnPolicyEval">📊 策略評估</button>
+    <button class="btn btn-success"   id="btnValueIter">⚡ 價值迭代</button>
+    <button class="btn btn-reset"     id="btnReset">🔄 重置</button>
+  </div>
+
+  <!-- Instruction -->
+  <div class="instruction" id="instruction">請在下方網格中依序點擊設定：<strong>起點</strong>（綠）→ <strong>終點</strong>（紅）→ <strong>障礙物</strong>（灰）</div>
+
+  <!-- Status -->
+  <div class="status-bar">
+    <span class="tag tag-start" id="tagStart">起點：未設定</span>
+    <span class="tag tag-end"   id="tagEnd">終點：未設定</span>
+    <span class="tag tag-obs"   id="tagObs">障礙物：0 / —</span>
+  </div>
+
+  <!-- Grid -->
+  <div class="grid-container">
+    <table id="grid"></table>
+  </div>
+
+  <!-- Info -->
+  <div class="info">
+    <p>參數：<code>γ = 0.9</code>　<code>step reward = −1</code>　<code>goal reward = 0</code>（terminal）</p>
+  </div>
+
+<script>
+/* ═════════════════════════════════════════════════════════════
+   State
+   ═════════════════════════════════════════════════════════════ */
+let n = 7;
+let startCell = null;   // [r, c]
+let endCell = null;
+let obstacles = [];     // [[r,c], ...]
+let maxObs = 0;
+let phase = 'start';    // start | end | obs | done
+let currentPolicy = null;
+
+const ARROW_MAP = { up: '↑', down: '↓', left: '←', right: '→' };
+
+/* ═════════════════════════════════════════════════════════════
+   DOM refs
+   ═════════════════════════════════════════════════════════════ */
+const gridEl        = document.getElementById('grid');
+const sizeEl        = document.getElementById('gridSize');
+const instrEl       = document.getElementById('instruction');
+const tagStartEl    = document.getElementById('tagStart');
+const tagEndEl      = document.getElementById('tagEnd');
+const tagObsEl      = document.getElementById('tagObs');
+
+/* ═════════════════════════════════════════════════════════════
+   Grid rendering
+   ═════════════════════════════════════════════════════════════ */
+function buildGrid() {
+  gridEl.innerHTML = '';
+  for (let r = 0; r < n; r++) {
+    const tr = document.createElement('tr');
+    for (let c = 0; c < n; c++) {
+      const td = document.createElement('td');
+      td.id = `cell-${r}-${c}`;
+      td.dataset.r = r;
+      td.dataset.c = c;
+      td.addEventListener('click', onCellClick);
+      tr.appendChild(td);
+    }
+    gridEl.appendChild(tr);
+  }
+}
+
+function refreshGrid() {
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      const td = document.getElementById(`cell-${r}-${c}`);
+      td.className = '';
+      td.innerHTML = '';
+      if (startCell && startCell[0] === r && startCell[1] === c) {
+        td.classList.add('cell-start');
+        td.innerHTML = '<span class="arrow">🟢</span>';
+      } else if (endCell && endCell[0] === r && endCell[1] === c) {
+        td.classList.add('cell-end');
+        td.innerHTML = '<span class="arrow">🔴</span>';
+      } else if (obstacles.some(o => o[0] === r && o[1] === c)) {
+        td.classList.add('cell-obs');
+        td.innerHTML = '<span class="arrow">🚧</span>';
+      }
+    }
+  }
+  // Update tags
+  tagStartEl.textContent = startCell ? `起點：(${startCell[0]}, ${startCell[1]})` : '起點：未設定';
+  tagEndEl.textContent   = endCell   ? `終點：(${endCell[0]}, ${endCell[1]})`   : '終點：未設定';
+  tagObsEl.textContent   = `障礙物：${obstacles.length} / ${maxObs}`;
+}
+
+/* ═════════════════════════════════════════════════════════════
+   Cell click handler
+   ═════════════════════════════════════════════════════════════ */
+function onCellClick(e) {
+  const r = parseInt(e.currentTarget.dataset.r);
+  const c = parseInt(e.currentTarget.dataset.c);
+
+  if (phase === 'start') {
+    startCell = [r, c];
+    phase = 'end';
+    instrEl.innerHTML = '請點擊設定 <strong>終點</strong>（紅色）';
+  } else if (phase === 'end') {
+    if (startCell && startCell[0] === r && startCell[1] === c) return; // can't overlap
+    endCell = [r, c];
+    maxObs = n - 2;
+    if (maxObs > 0) {
+      phase = 'obs';
+      instrEl.innerHTML = `請點擊設定 <strong>障礙物</strong>（灰色），最多 ${maxObs} 個`;
+    } else {
+      phase = 'done';
+      instrEl.innerHTML = '✅ 設定完成！可使用上方按鈕生成策略';
+    }
+  } else if (phase === 'obs') {
+    if (startCell && startCell[0] === r && startCell[1] === c) return;
+    if (endCell && endCell[0] === r && endCell[1] === c) return;
+    if (obstacles.some(o => o[0] === r && o[1] === c)) {
+      // Toggle off
+      obstacles = obstacles.filter(o => !(o[0] === r && o[1] === c));
+    } else {
+      if (obstacles.length >= maxObs) return;
+      obstacles.push([r, c]);
+    }
+    if (obstacles.length === maxObs) {
+      phase = 'done';
+      instrEl.innerHTML = '✅ 設定完成！可使用上方按鈕生成策略';
+    }
+  }
+  currentPolicy = null;
+  refreshGrid();
+}
+
+/* ═════════════════════════════════════════════════════════════
+   API helpers
+   ═════════════════════════════════════════════════════════════ */
+async function postJSON(url, body) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+function baseBody() {
+  return { n, start: startCell, end: endCell, obstacles };
+}
+
+function canRun() {
+  if (!startCell || !endCell) {
+    instrEl.innerHTML = '⚠️ 請先設定起點和終點！';
+    return false;
+  }
+  return true;
+}
+
+/* ═════════════════════════════════════════════════════════════
+   Display helpers
+   ═════════════════════════════════════════════════════════════ */
+function showPolicy(policy, values) {
+  refreshGrid();
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      const key = `${r},${c}`;
+      const td = document.getElementById(`cell-${r}-${c}`);
+      if (startCell && startCell[0] === r && startCell[1] === c) continue;
+      if (endCell && endCell[0] === r && endCell[1] === c) continue;
+      if (obstacles.some(o => o[0] === r && o[1] === c)) continue;
+
+      let html = '';
+      if (policy && policy[key]) {
+        html += `<div class="arrow">${ARROW_MAP[policy[key]]}</div>`;
+      }
+      if (values && values[key] !== undefined) {
+        html += `<div class="value">V = ${values[key]}</div>`;
+      }
+      td.innerHTML = html;
+    }
+  }
+  // Also show V(s) on start cell if available
+  if (values && startCell) {
+    const skey = `${startCell[0]},${startCell[1]}`;
+    if (values[skey] !== undefined) {
+      const td = document.getElementById(`cell-${startCell[0]}-${startCell[1]}`);
+      let html = '';
+      if (policy && policy[skey]) {
+        html += `<div class="arrow">${ARROW_MAP[policy[skey]]}</div>`;
+      }
+      html += `<div class="value">V = ${values[skey]}</div>`;
+      td.innerHTML = html;
+    }
+  }
+}
+
+/* ═════════════════════════════════════════════════════════════
+   Button handlers
+   ═════════════════════════════════════════════════════════════ */
+document.getElementById('btnRandomPolicy').addEventListener('click', async () => {
+  if (!canRun()) return;
+  instrEl.innerHTML = '⏳ 生成隨機策略中…';
+  const data = await postJSON('/api/random_policy', baseBody());
+  currentPolicy = data.policy;
+  showPolicy(data.policy, null);
+  instrEl.innerHTML = '🎲 已生成隨機策略（箭頭顯示於各格子）';
+});
+
+document.getElementById('btnPolicyEval').addEventListener('click', async () => {
+  if (!canRun()) return;
+  if (!currentPolicy) {
+    instrEl.innerHTML = '⚠️ 請先生成隨機策略！';
+    return;
+  }
+  instrEl.innerHTML = '⏳ 執行策略評估中…';
+  const body = { ...baseBody(), policy: currentPolicy };
+  const data = await postJSON('/api/policy_evaluation', body);
+  showPolicy(currentPolicy, data.values);
+  instrEl.innerHTML = '📊 策略評估完成，V(s) 已顯示';
+});
+
+document.getElementById('btnValueIter').addEventListener('click', async () => {
+  if (!canRun()) return;
+  instrEl.innerHTML = '⏳ 執行價值迭代中…';
+  const data = await postJSON('/api/value_iteration', baseBody());
+  currentPolicy = data.policy;
+  showPolicy(data.policy, data.values);
+  instrEl.innerHTML = '⚡ 價值迭代完成，最佳策略與 V(s) 已顯示';
+});
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  startCell = null;
+  endCell = null;
+  obstacles = [];
+  maxObs = 0;
+  phase = 'start';
+  currentPolicy = null;
+  instrEl.innerHTML = '請在下方網格中依序點擊設定：<strong>起點</strong>（綠）→ <strong>終點</strong>（紅）→ <strong>障礙物</strong>（灰）';
+  buildGrid();
+  refreshGrid();
+});
+
+sizeEl.addEventListener('change', () => {
+  n = parseInt(sizeEl.value);
+  document.getElementById('btnReset').click();
+});
+
+/* ═════════════════════════════════════════════════════════════
+   Init
+   ═════════════════════════════════════════════════════════════ */
+buildGrid();
+refreshGrid();
+</script>
+</body>
+</html>
